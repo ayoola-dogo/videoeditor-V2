@@ -1,0 +1,245 @@
+{% extends 'process/base.html' %}
+
+{% block style %}
+.panel .row
+{
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+.panel .row .col-sm-6
+{
+    padding-top: 5px;
+    padding-bottom: 5px;
+}
+
+.row
+{
+    padding-top: 20px;
+}
+
+.row #panel-1
+{
+    margin-top: 10px !important;
+}
+
+.row #panel-2
+{
+    margin-top: 40px !important;
+}
+
+.form-1, .form-2
+{
+    padding-left: 20px;
+}
+
+.form-2
+{
+    padding-top: 5px;
+    padding-bottom: 5px;
+}
+
+input
+{
+    color: black;
+}
+
+select {
+    color: black;
+}
+
+textarea {
+  resize: none !important;
+  margin: auto !important;
+  height: 70px !important;
+  width: 700px !important;
+  color: black !important;
+  text-align: center !important;
+}
+
+#link_to_video
+{
+  color: #66ff00;
+}
+
+#row-4
+{
+  padding-bottom: 15px !important;
+}
+
+#cancel{
+  margin-left: 70px !important;
+}
+
+#row-col-5{
+}
+
+{% endblock style %}
+
+{% block select_video %}
+<div class="row">
+  <div class="col-lg-12">
+    <form class="form" action="{% url 'video_url' %}" method="post">
+      {% csrf_token %}
+      <div class="panel panel-default" id="panel-1">
+        <div class="panel-heading"><h3 class="panel-title"><label id="head">Processing...................... </label></h3></div>
+          <div class="row">
+            <div class="panel-body" id="body-1">
+                <textarea class="form-control" id="progress">Monitor Progress</textarea>
+            </div>
+          </div>
+      </div>
+       <div class="panel panel-default" id="panel-2">
+        <div class="panel-heading"><h3 class="panel-title"><label>Summary of result</label></h3></div>
+        {% if form.errors %}
+          <p style="color: red;">
+            please correct the error{{ form.errors|pluralize }}
+          </p>
+        {% endif %}
+        <div class="row">
+          <div class="col-sm-6">
+          {% for field in submit_form %}
+            <div class="form-group field-wrapper form-2">
+                {{ field.label_tag }} {{ field }}
+                {{ field.errors }}
+            </div>
+            {% cycle "" "</div><div class='col-sm-6'>" %}
+          {% endfor %}
+          </div>
+        </div>
+        <div class="row" id="row-4">
+          <div class="col-md-4">
+          </div>
+          <div class="col-md-4">
+            <a href="{% url 'download_page' %}" id="link_to_video" class="text-justify" style="text-decoration:none;">
+              After processing, Click here to view video</a>
+          </div>
+          <div class="col-md-4">
+          </div>
+        </div>
+         <div class="row" id="row-5">
+            <div class="col-md-4">
+            </div>
+            <div class="col-md-4" id="row-col-5">
+              <a class="btn btn-default text-justify" onclick="cancel()" id="cancel">Cancel</a>
+            </div>
+            <div class="col-md-4">
+            </div>
+          </div>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock select_video %}
+
+{% block script %}
+var loc = window.location
+
+var wsStart = 'ws://'
+if (loc.protocol == 'https:'){
+  wsStart = 'wss://'
+}
+
+var endpoint = wsStart + loc.host + loc.pathname
+var socket = new WebSocket(endpoint)
+var elProgress = document.getElementById("progress")
+var elOriginSize = document.getElementById("id_origin_video_size")
+var elOriginlen = document.getElementById("id_origin_video_length")
+var elNewSize = document.getElementById("id_new_video_size")
+var elNewlen = document.getElementById("id_new_video_length")
+var videoLink = document.getElementById("link_to_video")
+videoLink.removeAttribute("href")
+var cancled = false
+var elHead = document.getElementById("head")
+var elCancel = document.getElementById("cancel")
+
+socket.onopen = function(event){
+  $.confirm({
+    title: 'Confirm',
+    content: 'This could take a while. Do you want to continue!',
+    buttons: {
+        confirm: function () {
+            socket.send('start')
+        },
+        cancel: function () {
+            socket.send('stop')
+            loc.href = "{% url 'home' %}"
+        },
+    }
+});
+}
+
+socket.onmessage = function(event){
+  if (cancled){
+      socket.send("stop")
+  } else {
+    var key = event.data.substr(0, 3)
+    if(key == "ovl"){
+      elOriginlen.value = event.data.replace("ovl", "")
+    } else if (key == "ovs"){
+      elOriginSize.value = event.data.replace("ovs", "")
+   } else if (key == "nvs"){
+      elNewSize.value = event.data.replace("nvs", "")
+   } else if (key == "nvl"){
+      elNewlen.value = event.data.replace("nvl", "")
+      videoLink.setAttribute("href", "{% url 'download_page' %}")
+      videoLink.removeAttribute("style")
+      videoLink.text = "Process Completed, Click here to view video"
+   } else if (key == " St"){
+      elHead.innerHTML = event.data
+   } else {
+      elProgress.innerHTML = event.data
+    }
+    }
+}
+
+socket.onerror = function(event){
+  console.log("error", event)
+}
+
+socket.onclose = function(event){
+  if (elProgress.innerHTML != ' Video processing finished successfully.'){
+    $.confirm({
+      title: 'Confirm',
+      content: "The process has been cancelled",
+      buttons: {
+          Ok: function () {
+            window.onpopstate = function(event) {
+              cancled = true
+            }
+          },
+      }
+  }); }
+}
+
+const stateObj = { home: 'home' }
+window.history.pushState(stateObj, null, "{% url 'home' %}")
+window.onpopstate = function(event) {
+  if (elProgress.innerHTML == " Video processing finished successfully."){
+      alert("The processing is already finished")
+   } else {
+  alert("The process has been cancelled")
+  cancled = true
+}
+}
+
+function cancel(){
+  $.confirm({
+      title: 'Confirm',
+      content: "Confirm cancellation",
+      buttons: {
+          Yes: function () {
+              cancled = true
+          },
+          No: function () {
+        }
+        }
+      });
+  window.setTimeout(canc,120)
+}
+
+function canc(){
+  elCancel.setAttribute("href", "{% url 'home' %}")
+}
+
+{% endblock script %}
